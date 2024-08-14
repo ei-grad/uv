@@ -234,9 +234,8 @@ impl InternerGuard<'_> {
             return NodeId::FALSE;
         }
 
-        // X and Y are not equal but refer to the same node.
-        // Thus one is complement but not the other (X and not X).
-        if xi.index() == yi.index() {
+        // `X and not X` is `false` by definition.
+        if xi.not() == yi {
             return NodeId::FALSE;
         }
 
@@ -276,6 +275,55 @@ impl InternerGuard<'_> {
         self.state.cache.insert((xi, yi), node);
 
         node
+    }
+
+    /// Returns `true` if there is no environment in which both marker trees can apply,
+    /// i.e. their conjunction is always `false`.
+    pub(crate) fn is_disjoint(&mut self, xi: NodeId, yi: NodeId) -> bool {
+        // `false` is disjoint with any marker.
+        if xi == NodeId::FALSE || yi == NodeId::FALSE {
+            return true;
+        }
+        // `true` is not disjoint with any marker except `false`.
+        if xi == NodeId::TRUE || yi == NodeId::TRUE {
+            return false;
+        }
+        // `X` and `not X` are disjoint by definition.
+        if xi.not() == yi {
+            return true;
+        }
+
+        // The operation `X and Y` was memoized.
+        // `X` and `Y` are disjoint IFF their conjunction is unsatisfiable.
+        if let Some(result) = self.state.cache.get(&(xi, yi)) {
+            return result.is_false();
+        }
+
+        let (x, y) = (self.shared.node(xi), self.shared.node(yi));
+        match x.var.cmp(&y.var) {
+            // X is higher order than Y, Y must be disjoint with every child of X.
+            Ordering::Less => x
+                .children
+                .nodes()
+                .all(|x| self.is_disjoint(x.negate(xi), yi)),
+            // Y is higher order than X, X must be disjoint with every child of Y.
+            Ordering::Greater => y
+                .children
+                .nodes()
+                .all(|y| self.is_disjoint(y.negate(yi), xi)),
+            // X and Y represent the same variable, their merged edges must be unsatisifiable.
+            Ordering::Equal => x
+                .children
+                .apply(xi, &y.children, yi, |x, y| {
+                    if self.is_disjoint(x, y) {
+                        NodeId::FALSE
+                    } else {
+                        NodeId::TRUE
+                    }
+                })
+                .nodes()
+                .all(|n| n.is_false()),
+        }
     }
 
     // Restrict the output of a given boolean variable in the tree.
