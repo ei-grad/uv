@@ -148,13 +148,7 @@ fn interpreter_meets_requirements(
     let Some(request) = requested_python else {
         return true;
     };
-    if request.satisfied(interpreter, cache) {
-        debug!("Interpreter meets the requested Python: `{request}`");
-        true
-    } else {
-        debug!("Interpreter does not meet the request: `{request}`");
-        false
-    }
+    request.satisfied(interpreter, cache)
 }
 
 #[derive(Debug)]
@@ -231,15 +225,24 @@ impl FoundInterpreter {
                     python_request.as_ref(),
                     cache,
                 ) {
+                    if let Some(request) = &python_request {
+                        debug!("The project environment's Python version satisfies `{request}`");
+                    }
                     if let Some(requires_python) = requires_python.as_ref() {
                         if requires_python.contains(venv.interpreter().python_version()) {
                             return Ok(Self::Environment(venv));
                         }
                         debug!(
-                            "Interpreter does not meet the project's Python requirement: `{requires_python}`"
+                            "The project environment's Python version does not meet the project's Python requirement: `{requires_python}`"
                         );
                     } else {
                         return Ok(Self::Environment(venv));
+                    }
+                } else {
+                    if let Some(request) = &python_request {
+                        debug!(
+                            "The project environment's Python version does not satisfy `{request}`"
+                        );
                     }
                 }
             }
